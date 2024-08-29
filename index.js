@@ -11,7 +11,6 @@ const requiredEnvVars = [
   "COINBASE_API_KEY_NAME",
   "COINBASE_API_KEY_SECRET",
   "ENCRYPTION_KEY",
-  "ENCRYPTION_IV",
 ];
 
 requiredEnvVars.forEach((env) => {
@@ -129,14 +128,17 @@ async function getOrCreateAddress(user) {
     return userStates.address;
   }
 
-  const encryptedWalletData = await db.get(user.id.toString());
+  const result = await db.get(user.id.toString());
   let wallet;
-  if (encryptedWalletData?.value) {
-    const walletData = JSON.parse(decrypt(encryptedWalletData.value));
+  if (result?.value) {
+    const {iv, encryptedWalletData} = result.value;
+    const walletData = JSON.parse(decrypt(data, iv));
     wallet = await Wallet.import(walletData);
   } else {
     wallet = await Wallet.create({ networkId: "base-mainnet" });
-    await db.set(user.id.toString(), encrypt(JSON.stringify(wallet.export())));
+    const iv = crypto.randomBytes(16).toString("hex");
+    const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
+    await db.set(user.id.toString(), { iv, encryptedWalletData });
   }
 
   updateUserState(user, { address: wallet.getDefaultAddress() });
@@ -337,16 +339,14 @@ async function handlePinMessage(ctx) {
 }
 
 // Encrypt and Decrypt functions
-function encrypt(text) {
+function encrypt(text, iv) {
   const encryptionKey = Buffer.from(process.env.ENCRYPTION_KEY, "hex");
-  const iv = Buffer.from(process.env.ENCRYPTION_IV, "hex");
   const cipher = crypto.createCipheriv("aes-256-cbc", encryptionKey, iv);
   return cipher.update(text, "utf8", "hex") + cipher.final("hex");
 }
 
-function decrypt(encrypted) {
+function decrypt(encrypted, iv) {
   const encryptionKey = Buffer.from(process.env.ENCRYPTION_KEY, "hex");
-  const iv = Buffer.from(process.env.ENCRYPTION_IV, "hex");
   const decipher = crypto.createDecipheriv("aes-256-cbc", encryptionKey, iv);
   return decipher.update(encrypted, "hex", "utf8") + decipher.final("utf8");
 }
