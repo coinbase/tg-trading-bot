@@ -31,11 +31,11 @@ COINBASE_API_KEY_SECRET="Your CDP API Key Private Key"
 ENCRYPTION_KEY="Your hex-encoded encryption key"
 ```
 
-6. Run the project
+6. Run the project:
 
 ```
 npm install
 npm run start
 ```
 
-7. Send the `/start` message to the Bot you provisioned in Step 3.
+7. Send the `/start` message to the Bot you provisioned in Step 3, and start trading!
