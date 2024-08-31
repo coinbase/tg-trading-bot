@@ -4,6 +4,8 @@ This provides a template for Telegram trading bot on Base Mainnet that uses the
 [Coinbase Developer Platform (CDP) SDK](https://docs.cdp.coinbase.com/cdp-sdk/docs/welcome)
 and [MPC Wallet APIs](https://docs.cdp.coinbase.com/mpc-wallet/docs/welcome).
 
+It stores wallet data in a local database using PouchDB, and is meant to be run locally.
+
 ## Set Up
 
 1. Clone this repository:
