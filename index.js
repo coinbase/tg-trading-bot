@@ -5,6 +5,9 @@ const Decimal = require("decimal.js");
 const Web3 = require("web3");
 const crypto = require("crypto");
 
+// Load environment variables from .env file if it exists.
+require("dotenv").config();
+
 // Ensure environment variables are set.
 const requiredEnvVars = [
   "TELEGRAM_BOT_TOKEN",
@@ -131,14 +134,15 @@ async function getOrCreateAddress(user) {
   const result = await db.get(user.id.toString());
   let wallet;
   if (result?.value) {
-    const {iv, encryptedWalletData} = result.value;
-    const walletData = JSON.parse(decrypt(data, iv));
+    const { ivString, encryptedWalletData } = result.value;
+    const iv = Buffer.from(ivString, "hex");
+    const walletData = JSON.parse(decrypt(encryptedWalletData, iv));
     wallet = await Wallet.import(walletData);
   } else {
     wallet = await Wallet.create({ networkId: "base-mainnet" });
-    const iv = crypto.randomBytes(16).toString("hex");
+    const iv = crypto.randomBytes(16);
     const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
-    await db.set(user.id.toString(), { iv, encryptedWalletData });
+    await db.set(user.id.toString(), { ivString: iv.toString('hex'), encryptedWalletData });
   }
 
   updateUserState(user, { address: wallet.getDefaultAddress() });
