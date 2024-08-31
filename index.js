@@ -82,7 +82,7 @@ bot.command("start", async (ctx) => {
     .text("Pin message", "pin_message");
 
   const welcomeMessage = `
-  *Welcome to the CDP Trading bot!*
+  *Welcome to your Onchain Trading Bot!*
   Your Base address is ${userAddress.getId()}.
   Select an option below:`;
 
@@ -164,9 +164,13 @@ async function handleCheckBalance(ctx) {
   );
 }
 
-// Handle deposits
 async function handleDeposit(ctx) {
   const userAddress = await getOrCreateAddress(ctx.from);
+  await sendReply(
+    ctx,
+    "_Note: As this is a test app, make sure to deposit only small amounts of ETH!_",
+    { parse_mode: "Markdown" },
+  );
   await sendReply(
     ctx,
     "Please send your ETH to the following address on Base:",
