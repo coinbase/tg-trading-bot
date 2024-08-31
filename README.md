@@ -38,4 +38,4 @@ npm install
 npm run start
 ```
 
-7. Send the `/start` message to the Bot you provisioned in Step 3, and start trading!
+7. Send the `/start` message to the Bot you provisioned in Step 3 on Telegrma, and start trading!
