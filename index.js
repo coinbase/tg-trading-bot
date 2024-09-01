@@ -214,7 +214,7 @@ async function handleWithdrawal(ctx) {
       } else {
         await sendReply(
           ctx,
-          "Please respond with the address you want to receive the ETH.",
+          "Please respond with the address, ENS name, or Base name at which you would like to receive the ETH.",
           { reply_markup: { force_reply: true } },
         );
         updateUserState(ctx.from, {
@@ -224,7 +224,7 @@ async function handleWithdrawal(ctx) {
     }
   } else {
     const destination = ctx.message.text;
-    if (!Web3.utils.isAddress(destination)) {
+    if (!Web3.utils.isAddress(destination) && !destination.endsWith(".eth")) {
       await ctx.reply("Invalid destination address. Please try again.");
       clearUserState(ctx.from);
       return;

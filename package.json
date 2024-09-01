@@ -14,7 +14,7 @@
   "author": "Yuga Cohler",
   "license": "ISC",
   "dependencies": {
-    "@coinbase/coinbase-sdk": "^0.1.1",
+    "@coinbase/coinbase-sdk": "^0.2.0",
     "@replit/database": "^3.0.1",
     "@types/node": "^18.0.6",
     "crypto": "^1.0.1",
