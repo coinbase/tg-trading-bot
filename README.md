@@ -4,6 +4,8 @@ This provides a template for Telegram trading bot on Base Mainnet that uses the
 [Coinbase Developer Platform (CDP) SDK](https://docs.cdp.coinbase.com/cdp-sdk/docs/welcome)
 and [MPC Wallet APIs](https://docs.cdp.coinbase.com/mpc-wallet/docs/welcome).
 
+It stores wallet data in a local database using PouchDB, and is meant to be run locally.
+
 ## Set Up
 
 1. Clone this repository:
@@ -20,8 +22,7 @@ git clone https://github.com/coinbase/tg-trading-bot.git
 openssl rand -hex 32 # Save the output to use as the encryption key in Step 5.
 ```
 
-5. Set the following environment variables, e.g. in a `.env` file or in a
-   Secret Manager:
+5. Set the following environment variables in a `.env` file in this directory:
 
 ```bash
 TELEGRAM_BOT_TOKEN="Your Telegram Bot Token"
@@ -30,9 +31,11 @@ COINBASE_API_KEY_SECRET="Your CDP API Key Private Key"
 ENCRYPTION_KEY="Your hex-encoded encryption key"
 ```
 
-6. Run the project!
+6. Run the project:
 
 ```
 npm install
 npm run start
 ```
+
+7. Send the `/start` message to the Bot you provisioned in Step 3 on Telegrma, and start trading!

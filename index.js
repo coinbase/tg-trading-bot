@@ -1,11 +1,13 @@
 const { Bot, InlineKeyboard } = require("grammy");
 const { Coinbase, Wallet } = require("@coinbase/coinbase-sdk");
-const Database = require("@replit/database");
+const PouchDB = require('pouchdb');
 const Decimal = require("decimal.js");
 const Web3 = require("web3");
 const crypto = require("crypto");
 
 // Ensure environment variables are set.
+require("dotenv").config();
+
 const requiredEnvVars = [
   "TELEGRAM_BOT_TOKEN",
   "COINBASE_API_KEY_NAME",
@@ -25,8 +27,8 @@ const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
 // In-memory storage for user states
 const userStates = {};
 
-// Database for storing wallets
-const db = new Database();
+// Local database for storing wallets.
+const db = new PouchDB('myapp');
 
 // Initialize Coinbase SDK
 new Coinbase({
@@ -79,7 +81,7 @@ bot.command("start", async (ctx) => {
     .text("Pin message", "pin_message");
 
   const welcomeMessage = `
-  *Welcome to the CDP Trading bot!*
+  *Welcome to your Onchain Trading Bot!*
   Your Base address is ${userAddress.getId()}.
   Select an option below:`;
 
@@ -128,17 +130,26 @@ async function getOrCreateAddress(user) {
     return userStates.address;
   }
 
-  const result = await db.get(user.id.toString());
   let wallet;
-  if (result?.value) {
-    const {iv, encryptedWalletData} = result.value;
-    const walletData = JSON.parse(decrypt(data, iv));
+  try {
+    const result = await db.get(user.id.toString());
+    const { ivString, encryptedWalletData } = result;
+    const iv = Buffer.from(ivString, "hex");
+    const walletData = JSON.parse(decrypt(encryptedWalletData, iv));
     wallet = await Wallet.import(walletData);
-  } else {
-    wallet = await Wallet.create({ networkId: "base-mainnet" });
-    const iv = crypto.randomBytes(16).toString("hex");
-    const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
-    await db.set(user.id.toString(), { iv, encryptedWalletData });
+  } catch (error) {
+    if (err.name === 'not_found' || err.status === 404) {
+      wallet = await Wallet.create({ networkId: "base-mainnet" });
+      const iv = crypto.randomBytes(16);
+      const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
+      await db.put({
+        _id: user.id.toString(), 
+        ivString: iv.toString("hex"),
+        encryptedWalletData,
+      });
+    } else {
+      console.log('Error fetching from local database: ', error);
+    }   
   }
 
   updateUserState(user, { address: wallet.getDefaultAddress() });
@@ -163,6 +174,11 @@ async function handleCheckBalance(ctx) {
 // Handle deposits
 async function handleDeposit(ctx) {
   const userAddress = await getOrCreateAddress(ctx.from);
+  await sendReply(
+    ctx,
+    "_Note: As this is a test app, make sure to deposit only small amounts of ETH!_",
+    { parse_mode: "Markdown" },
+  );
   await sendReply(
     ctx,
     "Please send your ETH to the following address on Base:",
@@ -198,7 +214,7 @@ async function handleWithdrawal(ctx) {
       } else {
         await sendReply(
           ctx,
-          "Please respond with the address you want to receive the ETH.",
+          "Please respond with the address, ENS name, or Base name at which you would like to receive the ETH.",
           { reply_markup: { force_reply: true } },
         );
         updateUserState(ctx.from, {
@@ -208,7 +224,7 @@ async function handleWithdrawal(ctx) {
     }
   } else {
     const destination = ctx.message.text;
-    if (!Web3.utils.isAddress(destination)) {
+    if (!Web3.utils.isAddress(destination) && !destination.endsWith(".eth")) {
       await ctx.reply("Invalid destination address. Please try again.");
       clearUserState(ctx.from);
       return;
