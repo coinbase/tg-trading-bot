@@ -6,6 +6,16 @@ and [MPC Wallet APIs](https://docs.cdp.coinbase.com/mpc-wallet/docs/welcome).
 
 It stores wallet data in a local database using PouchDB, and is meant to be run locally.
 
+> **NOTE: This sample app is for demonstration purposes only.** Make sure to persist your
+> private keys, and deposit only small amounts of ETH to reduce the risk of losing your funds.
+
+## Feature requests
+
+If there is specific functionality you'd like to see in the CDP SDK that is missing,
+please [file it as an issue](https://github.com/coinbase/tg-trading-bot/issues) in this repository, and we will get back to you as soon as possible.
+
+You can also contact us via the [CDP SDK Discord Channel](https://discord.com/channels/1220414409550336183/1232677295546957919).
+
 ## Set Up
 
 1. Clone this repository:
