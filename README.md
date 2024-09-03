@@ -12,7 +12,7 @@ It stores wallet data in a local database using PouchDB, and is meant to be run 
 ## Feature requests
 
 If there is specific functionality you'd like to see in the CDP SDK that is missing,
-please [file it as an issue](https://github.com/coinbase/tg-trading-bot/issues) in this repository, and we will get back to you as soon as possible.
+please [file it as an issue](https://github.com/coinbase/coinbase-sdk-nodejs/issues), and we will get back to you as soon as possible.
 
 You can also contact us via the [CDP SDK Discord Channel](https://discord.com/channels/1220414409550336183/1232677295546957919).
 
