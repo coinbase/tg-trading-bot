@@ -78,6 +78,7 @@ bot.command("start", async (ctx) => {
     .text("Buy", "buy")
     .text("Sell", "sell")
     .row()
+    .text("Export key", "export_key")
     .text("Pin message", "pin_message");
 
   const welcomeMessage = `
@@ -99,6 +100,7 @@ const callbackHandlers = {
   buy: handleInitialBuy,
   sell: handleInitialSell,
   pin_message: handlePinMessage,
+  export_key: handleExportKey,
 };
 
 bot.on("callback_query:data", async (ctx) => {
@@ -352,6 +354,17 @@ async function handlePinMessage(ctx) {
     );
   }
   clearUserState(ctx.from);
+}
+
+// Handle exporting the key
+async function handleExportKey(ctx) {
+  const userAddress = await getOrCreateAddress(ctx.from);
+  const privateKey = userAddress.export();
+  await sendReply(
+    ctx,
+    "Your private key will be in the next message. Do NOT share it with anyone, and make sure you store it in a safe place.",
+  );
+  await sendReply(ctx, privateKey);
 }
 
 // Encrypt and Decrypt functions
