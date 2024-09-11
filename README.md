@@ -9,8 +9,7 @@ It stores wallet data in a local database using PouchDB, and is meant to be run 
 > **NOTE: This sample app is for demonstration purposes only.** Make sure to persist your
 > private keys, and deposit only small amounts of ETH to reduce the risk of losing your funds.
 
-**Secure your wallet using [best practices](https://docs.cdp.coinbase.com/mpc-wallet/docs/wallets#securing-a-wallet). In production, you should [use the 2-of-2 CDP Server-Signer](https://docs.cdp.coinbase.com/mpc-wallet/docs/serversigners)
-for increased security.**
+**Secure your wallet using [best practices](https://docs.cdp.coinbase.com/mpc-wallet/docs/wallets#securing-a-wallet). In production, you should [use the 2-of-2 CDP Server-Signer](https://docs.cdp.coinbase.com/mpc-wallet/docs/serversigners) with [IP whitelisting for your API key](https://docs.cdp.coinbase.com/developer-platform/docs/cdp-key-security) for increased security.**
 
 ## Feature requests
 
