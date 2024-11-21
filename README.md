@@ -9,7 +9,7 @@ It stores wallet data in a local database using PouchDB, and is meant to be run 
 > **NOTE: This sample app is for demonstration purposes only.** Make sure to persist your
 > private keys, and deposit only small amounts of ETH to reduce the risk of losing your funds.
 
-**Secure your wallet using [best practices](https://docs.cdp.coinbase.com/mpc-wallet/docs/wallets#securing-a-wallet). In production, you should [use the 2-of-2 CDP Server-Signer](https://docs.cdp.coinbase.com/mpc-wallet/docs/serversigners) with [IP whitelisting for your API key](https://docs.cdp.coinbase.com/developer-platform/docs/cdp-key-security) for increased security.**
+**Secure your wallet using [best practices](https://docs.cdp.coinbase.com/mpc-wallet/docs/wallets#securing-a-wallet). In production, you should [use the 2-of-2 CDP Server-Signer](https://docs.cdp.coinbase.com/mpc-wallet/docs/serversigners) with [IP whitelisting for your API key](https://docs.cdp.coinbase.com/get-started/docs/cdp-key-security) for increased security.**
 
 ## Feature requests
 
@@ -26,7 +26,7 @@ You can also contact us via the [CDP SDK Discord Channel](https://discord.com/ch
 git clone https://github.com/coinbase/tg-trading-bot.git
 ```
 
-2. Provision a [CDP API Key](https://docs.cdp.coinbase.com/developer-platform/docs/cdp-keys).
+2. Provision a [CDP API Key](https://docs.cdp.coinbase.com/get-started/docs/cdp-api-keys).
 3. Provision a [Telegram Bot Token](https://core.telegram.org/bots/tutorial) and register your Bot.
 4. Generate a 32-byte encryption key using OpenSSL:
 
@@ -50,4 +50,4 @@ npm install
 npm run start
 ```
 
-7. Send the `/start` message to the Bot you provisioned in Step 3 on Telegrma, and start trading!
+7. Send the `/start` message to the Bot you provisioned in Step 3 on Telegram, and start trading!
