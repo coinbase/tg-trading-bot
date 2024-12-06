@@ -5,9 +5,9 @@ const Decimal = require("decimal.js");
 const Web3 = require("web3");
 const crypto = require("crypto");
 
-// Ensure environment variables are set.
 require("dotenv").config();
 
+// Required environment variables validation
 const requiredEnvVars = [
   "TELEGRAM_BOT_TOKEN",
   "COINBASE_API_KEY_NAME",
@@ -17,357 +17,330 @@ const requiredEnvVars = [
 
 requiredEnvVars.forEach((env) => {
   if (!process.env[env]) {
-    throw new Error(`missing ${env} environment variable`);
+    throw new Error(`Missing ${env} environment variable`);
   }
 });
 
-// Create a bot object
+// Initialize core components
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN);
-
-// In-memory storage for user states
 const userStates = {};
-
-// Local database for storing wallets.
-const db = new PouchDB('myapp');
+const db = new PouchDB('myapp', {
+  ajax: {
+    timeout: 10000 // 10 second timeout for database operations
+  }
+});
 
 // Initialize Coinbase SDK
-new Coinbase({
+const coinbase = new Coinbase({
   apiKeyName: process.env.COINBASE_API_KEY_NAME,
   privateKey: process.env.COINBASE_API_KEY_SECRET,
 });
 
-// Helper functions
-const updateUserState = (user, state) => {
-  userStates[user.id] = { ...userStates[user.id], ...state };
+// State management functions
+const updateUserState = (user, newState) => {
+  const currentState = userStates[user.id] || {};
+  userStates[user.id] = { ...currentState, ...newState };
+  console.log('Updated user state:', user.id, userStates[user.id]);
 };
 
 const clearUserState = (user) => {
   delete userStates[user.id];
+  console.log('Cleared state for user:', user.id);
 };
 
+const getUserState = (user) => {
+  return userStates[user.id] || {};
+};
+
+// Reply keyboard setup
+const mainMenuKeyboard = {
+  keyboard: [
+    ["Check Balance", "Deposit"],
+    ["Buy", "Sell"],
+    ["Help", "Settings"]
+  ],
+  resize_keyboard: true,
+  persistent: true
+};
+
+// Message handling functions
 const sendReply = async (ctx, text, options = {}) => {
-  const message = await ctx.reply(text, options);
-  updateUserState(ctx.from, { messageId: message.message_id });
-};
-
-const handleUserState = async (ctx, handler) => {
-  const userState = userStates[ctx.from.id] || {};
-  if (
-    ctx.message.reply_to_message &&
-    ctx.message.reply_to_message.message_id === userState.messageId
-  ) {
-    await handler(ctx);
-  } else {
-    await ctx.reply("Please select an option from the menu.");
+  try {
+    const message = await ctx.reply(text, {
+      parse_mode: "Markdown",
+      ...options
+    });
+    if (options.trackReply !== false) {
+      updateUserState(ctx.from, { lastMessageId: message.message_id });
+    }
+    return message;
+  } catch (error) {
+    console.error('Error sending reply:', error);
+    throw error;
   }
 };
+
+// Wallet management
+async function getOrCreateAddress(user) {
+  console.log('Getting address for user:', user.id);
+  
+  try {
+    // Check memory cache first
+    const cachedState = getUserState(user);
+    if (cachedState.address) {
+      return cachedState.address;
+    }
+
+    let wallet;
+    // Try to load existing wallet
+    try {
+      const result = await db.get(user.id.toString());
+      const { ivString, encryptedWalletData } = result;
+      const iv = Buffer.from(ivString, "hex");
+      const walletData = JSON.parse(decrypt(encryptedWalletData, iv));
+      wallet = await Wallet.import(walletData);
+    } catch (error) {
+      // Create new wallet if not found
+      if (error.name === 'not_found' || error.status === 404) {
+        wallet = await Wallet.create({ networkId: "base-mainnet" });
+        const iv = crypto.randomBytes(16);
+        const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
+        await db.put({
+          _id: user.id.toString(),
+          ivString: iv.toString("hex"),
+          encryptedWalletData,
+        });
+      } else {
+        console.error('Database error:', error);
+        throw error;
+      }
+    }
+
+    const address = wallet.getDefaultAddress();
+    updateUserState(user, { address });
+    return address;
+  } catch (error) {
+    console.error('Error in getOrCreateAddress:', error);
+    throw error;
+  }
+}
+
+// Command handlers
+async function handleCheckBalance(ctx) {
+  try {
+    const userAddress = await getOrCreateAddress(ctx.from);
+    const balanceMap = await userAddress.listBalances();
+    const balancesString = balanceMap.size > 0
+      ? balanceMap.toString().slice(11, -1)
+      : "You have no balances.";
+    await sendReply(ctx, `Your current balances are as follows:\n${balancesString}`);
+  } catch (error) {
+    console.error('Error checking balance:', error);
+    await ctx.reply("Error checking balance. Please try again later.");
+  }
+}
+
+async function handleDeposit(ctx) {
+  try {
+    const userAddress = await getOrCreateAddress(ctx.from);
+    await sendReply(ctx, 
+      "_Note: As this is a test app, make sure to deposit only small amounts of ETH!_",
+      { parse_mode: "Markdown" }
+    );
+    await sendReply(ctx, "Please send your ETH to the following address on Base:");
+    await sendReply(ctx, `\`${userAddress.getId()}\``, { parse_mode: "Markdown" });
+  } catch (error) {
+    console.error('Error handling deposit:', error);
+    await ctx.reply("Error generating deposit address. Please try again later.");
+  }
+}
+
+async function handleInitialBuy(ctx) {
+  updateUserState(ctx.from, { 
+    buyRequested: true,
+    step: 'asset'
+  });
+  await sendReply(ctx, 
+    "Please respond with the asset you would like to buy (ticker or contract address).",
+    { reply_markup: { force_reply: true } }
+  );
+}
+
+async function handleInitialSell(ctx) {
+  updateUserState(ctx.from, {
+    sellRequested: true,
+    step: 'asset'
+  });
+  await sendReply(ctx,
+    "Please respond with the asset you would like to sell (ticker or contract address).",
+    { reply_markup: { force_reply: true } }
+  );
+}
+
+async function handleBuy(ctx) {
+  const userState = getUserState(ctx.from);
+  await executeTrade(ctx, "buy", userState);
+}
+
+async function handleSell(ctx) {
+  const userState = getUserState(ctx.from);
+  await executeTrade(ctx, "sell", userState);
+}
+
+async function executeTrade(ctx, type, userState) {
+  try {
+    if (!userState.asset) {
+      if (ctx.message.text.toLowerCase() === "eth" && type === "sell") {
+        await ctx.reply("You cannot sell ETH, as it is the quote currency. Please try again.");
+        clearUserState(ctx.from);
+        return;
+      }
+
+      updateUserState(ctx.from, { 
+        asset: ctx.message.text.toLowerCase(),
+        step: 'amount'
+      });
+
+      const prompt = type === "buy"
+        ? "Please respond with the amount of ETH you would like to spend."
+        : "Please respond with the amount of the asset you would like to sell.";
+      
+      await sendReply(ctx, prompt, { reply_markup: { force_reply: true } });
+    } else {
+      const amount = new Decimal(ctx.message.text);
+      const userAddress = await getOrCreateAddress(ctx.from);
+      const currentBalance = await userAddress.getBalance(
+        type === "buy" ? Coinbase.assets.Eth : userState.asset
+      );
+
+      if (amount.isNaN() || amount.greaterThan(currentBalance)) {
+        await ctx.reply("Invalid amount or insufficient balance. Please try again.");
+        clearUserState(ctx.from);
+        return;
+      }
+
+      const tradeType = type === "buy"
+        ? { fromAssetId: Coinbase.assets.Eth, toAssetId: userState.asset }
+        : { fromAssetId: userState.asset, toAssetId: Coinbase.assets.Eth };
+
+      await sendReply(ctx, `Initiating ${type}...`);
+      
+      try {
+        const trade = await userAddress.createTrade({ amount, ...tradeType });
+        await trade.wait();
+        await sendReply(ctx,
+          `Successfully completed ${type}: [Basescan Link](${trade.getTransaction().getTransactionLink()})`,
+          { parse_mode: "Markdown" }
+        );
+      } catch (error) {
+        console.error(`Error executing ${type}:`, error);
+        await ctx.reply(`An error occurred while executing the ${type}. Please try again.`);
+      }
+      
+      clearUserState(ctx.from);
+    }
+  } catch (error) {
+    console.error(`Error in executeTrade (${type}):`, error);
+    await ctx.reply("An error occurred. Please try again.");
+    clearUserState(ctx.from);
+  }
+}
 
 // Bot command handlers
 bot.command("start", async (ctx) => {
+  console.log('Received /start command from user:', ctx.from.id);
   const { from: user } = ctx;
-  updateUserState(user, {});
-  userAddress = await getOrCreateAddress(user);
-
-  const keyboard = new InlineKeyboard()
-    .text("Check Balance", "check_balance")
-    .row()
-    .text("Deposit ETH", "deposit_eth")
-    .row()
-    .text("Withdraw ETH", "withdraw_eth")
-    .row()
-    .text("Buy", "buy")
-    .text("Sell", "sell")
-    .row()
-    .text("Export key", "export_key")
-    .text("Pin message", "pin_message");
-
-  const welcomeMessage = `
-  *Welcome to your Onchain Trading Bot!*
-  Your Base address is ${userAddress.getId()}.
-  Select an option below:`;
-
-  await sendReply(ctx, welcomeMessage, {
-    reply_markup: keyboard,
-    parse_mode: "Markdown",
-  });
-});
-
-// Callback query handlers
-const callbackHandlers = {
-  check_balance: handleCheckBalance,
-  deposit_eth: handleDeposit,
-  withdraw_eth: handleInitialWithdrawal,
-  buy: handleInitialBuy,
-  sell: handleInitialSell,
-  pin_message: handlePinMessage,
-  export_key: handleExportKey,
-};
-
-bot.on("callback_query:data", async (ctx) => {
-  const handler = callbackHandlers[ctx.callbackQuery.data];
-  if (handler) {
-    await ctx.answerCallbackQuery();
-    await handler(ctx);
-  } else {
-    await ctx.reply("Unknown button clicked!");
-  }
-  console.log(
-    `User ID: ${ctx.from.id}, Username: ${ctx.from.username}, First Name: ${ctx.from.first_name}`,
-  );
-});
-
-// Handle user messages
-bot.on("message:text", async (ctx) =>
-  handleUserState(ctx, async () => {
-    const userState = userStates[ctx.from.id] || {};
-    if (userState.withdrawalRequested) await handleWithdrawal(ctx);
-    else if (userState.buyRequested) await handleBuy(ctx);
-    else if (userState.sellRequested) await handleSell(ctx);
-  }),
-);
-
-// Get or create the user's address
-async function getOrCreateAddress(user) {
-  if (userStates.address) {
-    return userStates.address;
-  }
-
-  let wallet;
+  
   try {
-    const result = await db.get(user.id.toString());
-    const { ivString, encryptedWalletData } = result;
-    const iv = Buffer.from(ivString, "hex");
-    const walletData = JSON.parse(decrypt(encryptedWalletData, iv));
-    wallet = await Wallet.import(walletData);
+    const userAddress = await getOrCreateAddress(user);
+    
+    const welcomeMessage = `
+Welcome to your Onchain Trading Bot!
+Your Base address is \`${userAddress.getId()}\`.
+
+Available commands:
+• Check Balance - View your current holdings
+• Deposit - Get your deposit address
+• Buy - Purchase cryptocurrencies
+• Sell - Sell your assets
+• Help - Get assistance
+• Settings - Configure your preferences
+
+Please select an option from the menu below.`;
+
+    await ctx.reply(welcomeMessage, {
+      parse_mode: "Markdown",
+      reply_markup: mainMenuKeyboard
+    });
   } catch (error) {
-    if (err.name === 'not_found' || err.status === 404) {
-      wallet = await Wallet.create({ networkId: "base-mainnet" });
-      const iv = crypto.randomBytes(16);
-      const encryptedWalletData = encrypt(JSON.stringify(wallet.export()), iv);
-      await db.put({
-        _id: user.id.toString(), 
-        ivString: iv.toString("hex"),
-        encryptedWalletData,
-      });
-    } else {
-      console.log('Error fetching from local database: ', error);
-    }   
+    console.error('Error in start command:', error);
+    await ctx.reply("An error occurred while starting the bot. Please try again.");
   }
+});
 
-  updateUserState(user, { address: wallet.getDefaultAddress() });
+// Message handler
+bot.on("message:text", async (ctx) => {
+  const text = ctx.message.text;
+  const userState = getUserState(ctx.from);
 
-  return wallet.getDefaultAddress();
-}
-
-// Handle checking balance
-async function handleCheckBalance(ctx) {
-  const userAddress = await getOrCreateAddress(ctx.from);
-  const balanceMap = await userAddress.listBalances();
-  const balancesString =
-    balanceMap.size > 0
-      ? balanceMap.toString().slice(11, -1)
-      : "You have no balances.";
-  await sendReply(
-    ctx,
-    `Your current balances are as follows:\n${balancesString}`,
-  );
-}
-
-// Handle deposits
-async function handleDeposit(ctx) {
-  const userAddress = await getOrCreateAddress(ctx.from);
-  await sendReply(
-    ctx,
-    "_Note: As this is a test app, make sure to deposit only small amounts of ETH!_",
-    { parse_mode: "Markdown" },
-  );
-  await sendReply(
-    ctx,
-    "Please send your ETH to the following address on Base:",
-  );
-  await sendReply(ctx, `${userAddress.getId()}`, { parse_mode: "Markdown" });
-}
-
-// Handle initial withdrawal request
-async function handleInitialWithdrawal(ctx) {
-  updateUserState(ctx.from, { withdrawalRequested: true });
-  await sendReply(
-    ctx,
-    "Please respond with the amount of ETH you want to withdraw.",
-    { reply_markup: { force_reply: true } },
-  );
-}
-
-// Handle withdrawals
-async function handleWithdrawal(ctx) {
-  const userState = userStates[ctx.from.id] || {};
-
-  if (!userState.withdrawalAmount) {
-    const withdrawalAmount = parseFloat(ctx.message.text);
-    if (isNaN(withdrawalAmount)) {
-      await ctx.reply("Invalid withdrawal amount. Please try again.");
-      clearUserState(ctx.from);
-    } else {
-      const userAddress = await getOrCreateAddress(ctx.from);
-      const currentBalance = await userAddress.getBalance(Coinbase.assets.Eth);
-      if (new Decimal(withdrawalAmount).greaterThan(currentBalance)) {
-        await ctx.reply("You do not have enough ETH to withdraw that amount.");
-        clearUserState(ctx.from);
-      } else {
-        await sendReply(
-          ctx,
-          "Please respond with the address, ENS name, or Base name at which you would like to receive the ETH.",
-          { reply_markup: { force_reply: true } },
-        );
-        updateUserState(ctx.from, {
-          withdrawalAmount,
-        });
-      }
-    }
-  } else {
-    const destination = ctx.message.text;
-    if (!Web3.utils.isAddress(destination) && !destination.endsWith(".eth")) {
-      await ctx.reply("Invalid destination address. Please try again.");
-      clearUserState(ctx.from);
+  try {
+    // Handle ongoing operations first
+    if (userState.buyRequested || userState.sellRequested) {
+      const operation = userState.buyRequested ? handleBuy : handleSell;
+      await operation(ctx);
       return;
     }
 
-    const userAddress = await getOrCreateAddress(ctx.from);
+    // Handle menu commands
+    switch (text) {
+      case "Check Balance":
+        await handleCheckBalance(ctx);
+        break;
+      case "Deposit":
+        await handleDeposit(ctx);
+        break;
+      case "Buy":
+        await handleInitialBuy(ctx);
+        break;
+      case "Sell":
+        await handleInitialSell(ctx);
+        break;
+      case "Help":
+        await ctx.reply(`
+Available commands:
+• Check Balance - View your current holdings
+• Deposit - Get your deposit address
+• Buy - Purchase cryptocurrencies
+• Sell - Sell your assets
+• Help - Get assistance
+• Settings - Configure your preferences
 
-    try {
-      await sendReply(ctx, "Initiating withdrawal...");
-      const transfer = await userAddress.createTransfer({
-        amount: userState.withdrawalAmount,
-        assetId: Coinbase.assets.Eth,
-        destination: destination,
-      });
-      await transfer.wait();
-      await sendReply(
-        ctx,
-        `Successfully completed withdrawal: [Basescan Link](${transfer.getTransactionLink()})`,
-        { parse_mode: "Markdown" },
-      );
-      clearUserState(ctx.from);
-    } catch (error) {
-      await ctx.reply("An error occurred while initiating the transfer.");
-      console.error(error);
-      clearUserState(ctx.from);
+Send /start to see this menu again.`);
+        break;
+      case "Settings":
+        await ctx.reply("Settings menu is coming soon.");
+        break;
+      default:
+        await ctx.reply("Please select an option from the menu or type /start to see available commands.");
     }
-  }
-}
-
-// Handle buy request
-async function handleInitialBuy(ctx) {
-  await handleTradeInit(ctx, "buy");
-}
-// Handle buys
-async function handleBuy(ctx) {
-  await executeTrade(ctx, "buy");
-}
-// Handle sell request
-async function handleInitialSell(ctx) {
-  await handleTradeInit(ctx, "sell");
-}
-// Handle sells
-async function handleSell(ctx) {
-  await executeTrade(ctx, "sell");
-}
-
-// Initialize trade (Buy/Sell)
-async function handleTradeInit(ctx, type) {
-  const prompt =
-    type === "buy"
-      ? "Please respond with the asset you would like to buy (ticker or contract address)."
-      : "Please respond with the asset you would like to sell (ticker or contract address).";
-  updateUserState(ctx.from, { [`${type}Requested`]: true });
-  await sendReply(ctx, prompt, { reply_markup: { force_reply: true } });
-}
-
-// Generalized function to execute trades
-async function executeTrade(ctx, type) {
-  const userState = userStates[ctx.from.id] || {};
-  if (!userState.asset) {
-    // Prevent sale of ETH and log asset to user state
-    if (ctx.message.text.toLowerCase() === "eth" && type === "sell") {
-      await ctx.reply(
-        "You cannot sell ETH, as it is the quote currency. Please try again.",
-      );
-      clearUserState(ctx.from);
-      return;
-    }
-
-    updateUserState(ctx.from, { asset: ctx.message.text.toLowerCase() });
-
-    const prompt =
-      type === "buy"
-        ? "Please respond with the amount of ETH you would like to spend."
-        : "Please respond with the amount of the asset you would like to sell.";
-    await sendReply(ctx, prompt, { reply_markup: { force_reply: true } });
-  } else {
-    const amount = new Decimal(parseFloat(ctx.message.text));
-    const userAddress = await getOrCreateAddress(ctx.from);
-    const currentBalance = await userAddress.getBalance(
-      type === "buy" ? Coinbase.assets.Eth : userState.asset,
-    );
-    if (amount.isNaN() || amount.greaterThan(currentBalance)) {
-      await ctx.reply(
-        "Invalid amount or insufficient balance. Please try again.",
-      );
-      clearUserState(ctx.from);
-    } else {
-      const tradeType =
-        type === "buy"
-          ? { fromAssetId: Coinbase.assets.Eth, toAssetId: userState.asset }
-          : { fromAssetId: userState.asset, toAssetId: Coinbase.assets.Eth };
-      await sendReply(ctx, `Initiating ${type}...`);
-      try {
-        const userAddress = await getOrCreateAddress(ctx.from);
-        const trade = await userAddress.createTrade({ amount, ...tradeType });
-        await trade.wait();
-        await sendReply(
-          ctx,
-          `Successfully completed ${type}: [Basescan Link](${trade.getTransaction().getTransactionLink()})`,
-          { parse_mode: "Markdown" },
-        );
-        clearUserState(ctx.from);
-      } catch (error) {
-        await ctx.reply(`An error occurred while initiating the ${type}.`);
-        console.error(error);
-        clearUserState(ctx.from);
-      }
-    }
-  }
-}
-
-// Handle pinning the start message
-async function handlePinMessage(ctx) {
-  try {
-    await ctx.api.pinChatMessage(
-      ctx.chat.id,
-      userStates[ctx.from.id].messageId,
-    );
-    await ctx.reply("Message pinned successfully!");
   } catch (error) {
-    console.error("Failed to pin the message:", error);
-    await ctx.reply(
-      "Failed to pin the message. Ensure the bot has the proper permissions.",
-    );
+    console.error('Error handling message:', error);
+    await ctx.reply("An error occurred while processing your request. Please try again.");
+    clearUserState(ctx.from);
   }
-  clearUserState(ctx.from);
-}
+});
 
-// Handle exporting the key
-async function handleExportKey(ctx) {
-  const userAddress = await getOrCreateAddress(ctx.from);
-  const privateKey = userAddress.export();
-  await sendReply(
-    ctx,
-    "Your private key will be in the next message. Do NOT share it with anyone, and make sure you store it in a safe place.",
-  );
-  await sendReply(ctx, privateKey);
-}
+// Error handler
+bot.catch((error) => {
+  console.error("Bot error:", error);
+  
+  if (error.ctx) {
+    error.ctx.reply("An error occurred while processing your request. Please try again.")
+      .catch(e => console.error("Error sending error message:", e));
+  }
+});
 
-// Encrypt and Decrypt functions
+// Encryption utilities
 function encrypt(text, iv) {
   const encryptionKey = Buffer.from(process.env.ENCRYPTION_KEY, "hex");
   const cipher = crypto.createCipheriv("aes-256-cbc", encryptionKey, iv);
@@ -380,5 +353,6 @@ function decrypt(encrypted, iv) {
   return decipher.update(encrypted, "hex", "utf8") + decipher.final("utf8");
 }
 
-// Start the bot (using long polling)
+// Start the bot
 bot.start();
+console.log('Bot started');

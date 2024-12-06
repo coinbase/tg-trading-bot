@@ -51,3 +51,4 @@ npm run start
 ```
 
 7. Send the `/start` message to the Bot you provisioned in Step 3 on Telegrma, and start trading!
+# cdp-telegram-trading-bot
